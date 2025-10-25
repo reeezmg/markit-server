@@ -1,14 +1,19 @@
 const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
-const http = require('http');       // <-- add this
-const { Server } = require('socket.io'); // <-- add this
+const http = require('http');
+const { Server } = require('socket.io');
 
 const app = express();
 
 // CORS setup
 app.use(cors({
-  origin: 'http://localhost:8100',
+  origin: [
+    'http://localhost:8100', // Ionic mobile app (dev)
+    'http://localhost:8101', // Ionic mobile app (dev)
+    'http://localhost:3000', // React/Next dashboard
+    'https://markit.co.in'   // Production domain
+  ],
   credentials: true,
 }));
 
@@ -20,28 +25,41 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: ['http://localhost:8100', 'http://localhost:3000'],
+    origin: [
+      'http://localhost:8100',
+      'http://localhost:8101',
+      'http://localhost:3000',
+      'https://markit.co.in'
+    ],
     credentials: true,
   },
 });
 
-
-// socket events
+// ---------------- SOCKET EVENTS ----------------
 io.on('connection', (socket) => {
-  console.log('A user connected:', socket.id);
+  console.log('🔌 A user connected:', socket.id);
 
-  // client tells us which company they belong to
+  // ---------------- COMPANY SOCKET ----------------
   socket.on('joinCompany', (companyId) => {
+    if (!companyId) return;
     socket.join(`company:${companyId}`);
-    console.log(`Socket ${socket.id} joined room company:${companyId}`);
+    console.log(`🏢 Socket ${socket.id} joined room company:${companyId}`);
   });
 
+  // ---------------- CLIENT SOCKET ----------------
+  socket.on('joinClient', (clientId) => {
+    if (!clientId) return;
+    socket.join(`client:${clientId}`);
+    console.log(`👤 Socket ${socket.id} joined room client:${clientId}`);
+  });
+
+  // ---------------- DISCONNECT ----------------
   socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
+    console.log('❌ User disconnected:', socket.id);
   });
 });
 
-// route-based loading
+// ---------------- ROUTES ----------------
 const authRoutes = require('./routes/auth');
 const productRoutes = require('./routes/product');
 const shopRoutes = require('./routes/shop');
@@ -51,6 +69,7 @@ const historyRoutes = require('./routes/history');
 const mapRoutes = require('./routes/map');
 const devicesRoutes = require('./routes/devices');
 const clientRoutes = require('./routes/client');
+const packRoutes = require('./routes/pack')(io);
 
 app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);
@@ -61,9 +80,9 @@ app.use('/api/history', historyRoutes);
 app.use('/api/devices', devicesRoutes);
 app.use('/api/map', mapRoutes);
 app.use('/api/client', clientRoutes);
+app.use('/api/pack', packRoutes);
 
-
-
+// ---------------- START SERVER ----------------
 server.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}`);
+  console.log(`🚀 Server running at http://localhost:${port}`);
 });

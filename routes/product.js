@@ -1,5 +1,4 @@
 const express = require('express');
-const prisma = require('../prisma/prisma'); // adjust path as needed
 const router = express.Router();
 const { Pool } = require('pg');
 const Cursor = require('pg-cursor');

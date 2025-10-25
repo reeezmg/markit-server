@@ -1,7 +1,9 @@
 const express = require('express');
 const { Pool } = require('pg');
 const authenticateToken = require('../authMiddleware');
-const admin = require('../firebase');
+const { sendNotification } = require('../sendNotification');
+const { getTokens } = require('../getTokens');
+
 
 module.exports = (io) => {
   const router = express.Router();
@@ -77,7 +79,7 @@ module.exports = (io) => {
             console.warn(`No matching item for variant ${item.id} with size ${item.selectedSize}`);
             continue;
           }
-
+          console.log(`${trynbuy.id} Adding to Trynbuy: variant ${item.id}, item ${matchedItem.id}, qty ${item.quantity}`);
           await client.query(insertCartItemQuery, [
             trynbuy.id,
             item.id,
@@ -107,56 +109,19 @@ module.exports = (io) => {
       }
 
       await client.query('COMMIT');
-      console.log('✅ Trynbuy created with ID:', trynbuy.id);
 
       // 🔔 Socket event
-      io.to(`company:${trynbuy.company_id}`).emit('checkout:success', {
+      io.to(`company:${companyId}`).emit('checkout:success', {
         trynbuyId: trynbuy.id,
-        companyId: trynbuy.company_id,
-        clientId: trynbuy.client_id,
-        orderStatus: trynbuy.order_status,
+        companyId: companyId,
+        clientId: trynbuy.clientId,
+        orderStatus: trynbuy.orderStatus,
       });
 
-      // ✅ Push Notifications: send to all users of this company
-      const { rows: tokens } = await pool.query(
-        `
-        SELECT pt.token
-        FROM cap_push_token pt
-        JOIN users u ON pt.user_id = u.id
-        WHERE u.company_id = $1
-        `,
-        [trynbuy.company_id]
-      );
+      const resTokens = await getTokens(companyId);
+      console.log(resTokens);
+     sendNotification(resTokens.tokens, 'New Trynbuy Order', `Order No ${trynbuy.order_number}`, '/order/trynbuy');
 
-      if (tokens.length > 0) {
-        const message = {
-          notification: {
-            title: 'New Checkout',
-            body: `Order ${trynbuy.id} placed`,
-          },
-          android: {
-            notification: { sound: 'alert.wav' },
-          },
-          apns: {
-            payload: {
-              aps: {
-                sound: 'alert.caf',
-              },
-            },
-          },
-          tokens: tokens.map((t) => t.token),
-        };
-
-        admin.messaging().sendMulticast(message)
-          .then((response) => {
-            console.log('📲 Push sent:', response.successCount, '/', tokens.length);
-          })
-          .catch((err) => {
-            console.error('❌ Error sending push:', err);
-          });
-      } else {
-        console.log('⚠️ No device tokens found for company:', trynbuy.company_id);
-      }
 
       res.status(201).json({
         message: 'Trynbuy created successfully',
