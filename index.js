@@ -84,5 +84,5 @@ app.use('/api/pack', packRoutes);
 
 // ---------------- START SERVER ----------------
 server.listen(port, () => {
-  console.log(`🚀 Server running att http://localhost:${port}`);
+  console.log(`🚀 Server running attt http://localhost:${port}`);
 });
