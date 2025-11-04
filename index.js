@@ -12,7 +12,8 @@ app.use(cors({
     'http://localhost:8100', // Ionic mobile app (dev)
     'http://localhost:8101', // Ionic mobile app (dev)
     'http://localhost:3000', // React/Next dashboard
-    'https://markit.co.in'   // Production domain
+    'https://markit.co.in',
+    'http://192.168.8.252:8100'   // Production domain
   ],
   credentials: true,
 }));
@@ -29,7 +30,8 @@ const io = new Server(server, {
       'http://localhost:8100',
       'http://localhost:8101',
       'http://localhost:3000',
-      'https://markit.co.in'
+      'https://markit.co.in',
+      'http://192.168.8.252:8100'
     ],
     credentials: true,
   },
@@ -64,23 +66,27 @@ const authRoutes = require('./routes/auth');
 const productRoutes = require('./routes/product');
 const shopRoutes = require('./routes/shop');
 const addressRoutes = require('./routes/address');
-const checkoutRoutes = require('./routes/checkout')(io);
+const orderRoutes = require('./routes/order')(io);
 const historyRoutes = require('./routes/history');
 const mapRoutes = require('./routes/map');
 const devicesRoutes = require('./routes/devices');
 const clientRoutes = require('./routes/client');
+const razorpayRoutes = require('./routes/razorpay');
+const checkoutRoutes = require('./routes/checkout');
 const packRoutes = require('./routes/pack')(io);
 
 app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/shops', shopRoutes);
 app.use('/api/address', addressRoutes);
-app.use('/api/checkout', checkoutRoutes);
+app.use('/api/order', orderRoutes);
 app.use('/api/history', historyRoutes);
 app.use('/api/devices', devicesRoutes);
 app.use('/api/map', mapRoutes);
 app.use('/api/client', clientRoutes);
 app.use('/api/pack', packRoutes);
+app.use('/api/razorpay', razorpayRoutes);
+app.use('/api/checkout', checkoutRoutes);
 
 // ---------------- START SERVER ----------------
 server.listen(port, () => {
