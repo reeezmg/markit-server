@@ -24,7 +24,7 @@ router.post('/trynbuy/bill', async (req, res) => {
       grandTotal,
       discount,
       deliveryFees,
-      handlingFees,
+      waitingFee,
       keptItems,
       returnedItems,
     } = req.body;
@@ -48,7 +48,7 @@ router.post('/trynbuy/bill', async (req, res) => {
       INSERT INTO bills (
         id, created_at, updated_at, invoice_number, subtotal, grand_total, discount,
         delivery_fee, payment_method, payment_status,
-        transaction_id, company_id, client_id, trynbuy_id, handling_fee, is_markit
+        transaction_id, company_id, client_id, trynbuy_id, waiting_fee, is_markit
       )
       VALUES (
         $1, NOW(), NOW(), $2, $3, $4, $5,
@@ -70,7 +70,7 @@ router.post('/trynbuy/bill', async (req, res) => {
       companyId,           // $9
       clientId,            // $10
       trynbuyId,           // $11
-      handlingFees,        // $12
+      waitingFee,        // $12
     ]);
 
     // 🧩 Step 2️⃣ Create Entries for Kept Items

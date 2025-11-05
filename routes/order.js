@@ -28,6 +28,8 @@ module.exports = (io) => {
       shipping,
       deliveryType,
       deliveryTime,
+      waitingTime,
+      waitingFee,
       locationId,
       groups,
     } = req.body;
@@ -51,7 +53,7 @@ module.exports = (io) => {
           INSERT INTO trynbuys (
             id, created_at, checkout_method, subtotal, product_discount, 
             total_discount, shipping, delivery_type, delivery_time, order_status, 
-            location_id, client_id, company_id, packing_status
+            location_id, client_id, company_id, packing_status,waiting_fee, waiting_time
           )
           VALUES (
             gen_random_uuid(), NOW(), $1, $2, $3, 
@@ -72,6 +74,8 @@ module.exports = (io) => {
             locationId || null,
             authClientId,
             companyId,
+            waitingFee,
+            waitingTime
           ]
         );
 
