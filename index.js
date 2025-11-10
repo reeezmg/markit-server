@@ -74,6 +74,9 @@ const clientRoutes = require('./routes/client');
 const razorpayRoutes = require('./routes/razorpay');
 const checkoutRoutes = require('./routes/checkout');
 const packRoutes = require('./routes/pack')(io);
+const deliveryPartners = require('./routes/delivery/deliveryPartner');
+const deliveryPartnerOrders = require('./routes/delivery/orders');
+const deliveryPartnerEarnings = require('./routes/delivery/earnings');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);
@@ -86,6 +89,9 @@ app.use('/api/map', mapRoutes);
 app.use('/api/client', clientRoutes);
 app.use('/api/pack', packRoutes);
 app.use('/api/razorpay', razorpayRoutes);
+app.use('/api/deliveryPartners', deliveryPartners);
+app.use('/api/orders', deliveryPartnerOrders);
+app.use('/api/partner/earnings', deliveryPartnerEarnings);
 app.use('/api/checkout', checkoutRoutes);
 
 // ---------------- START SERVER ----------------
