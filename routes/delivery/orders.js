@@ -15,7 +15,6 @@ const ORDER_DETAILS_QUERY = `
         dpe.*,
         dp.id   as delivery_partner_id,
         cl.id   as client_id,
-        ca.id   as company_address_id,
         a.id    as address_id,
         t.*,
         json_build_object(
@@ -30,6 +29,8 @@ const ORDER_DETAILS_QUERY = `
             'lat', a.lat,
             'lng', a.lng
         ) as delivery_To,
+(
+    SELECT json_agg(
         json_build_object(
             'name', c.name,
             'phone', c.phone,
@@ -44,7 +45,15 @@ const ORDER_DETAILS_QUERY = `
             'lat', ca.lat,
             'lng', ca.lng,
             'formattedAddress', ca.formatted_address
-        ) as delivery_From,
+        )
+    )
+    FROM _try_n_buy_company tbc
+    LEFT JOIN companies c ON tbc."A" = c.id
+    LEFT JOIN _try_n_buy_company_locations tbl ON tbl."B" = t.id
+    LEFT JOIN addresses ca ON tbl."A" = ca.id
+    WHERE tbc."B" = t.id
+) as delivery_From,
+
         json_build_object(
             'name', dp.name,
             'phone', dp.phone,
@@ -106,11 +115,10 @@ const ORDER_DETAILS_QUERY = `
     FROM trynbuys t
     LEFT JOIN delivery_partner_earnings dpe ON t.id = dpe.trynbuy_id
     LEFT JOIN addresses a ON t.location_id = a.id
-    LEFT JOIN companies c ON t.company_id = c.id
-    LEFT JOIN addresses ca ON c.id = ca.company_id
     LEFT JOIN delivery_partners dp ON t.delivery_partner_id = dp.id
     LEFT JOIN clients cl ON t.client_id = cl.id
 `;
+
 
 /**
  * GET /api/delivery/orders
@@ -126,7 +134,7 @@ router.get('/', async (req, res) => {
         const { rows } = await pool.query(query, [partnerId]);
         res.json(rows);
     } catch (err) {
-        console.error('Error fetching partner orders:', err && err.stack ? err.stack : err);
+        console.error('Error fetching partner orders:', err);
         res.status(500).json({ error: 'Internal server error', detail: err.message });
     }
 });
@@ -144,6 +152,84 @@ router.get('/all', async (req, res) => {
         res.json(rows);
     } catch (err) {
         console.error('Error fetching trynbuy orders:', err && err.stack ? err.stack : err);
+        res.status(500).json({ error: 'Internal server error', detail: err.message });
+    }
+});
+
+
+/**
+ * GET /api/delivery/orders/filter
+ * Filters orders by partner ID and/or delivery day
+ */
+router.get('/filter', async (req, res) => {
+    const { partnerId, day } = req.query;
+
+    try {
+        let conditions = [];
+        const params = [];
+        let paramCount = 1;
+
+        if (partnerId) {
+            conditions.push(`t.delivery_partner_id = $${paramCount}`);
+            params.push(partnerId);
+            paramCount++;
+        }
+
+        if (day) {
+            if (day.includes(':')) {
+                conditions.push(`t.delivery_time::timestamp = $${paramCount}::timestamp`);
+                params.push(day);
+                paramCount++;
+            } else {
+                const startOfDay = `${day} 00:00:00`;
+                const endOfDay = `${day} 23:59:59.999`;
+                conditions.push(`t.delivery_time BETWEEN $${paramCount}::timestamp AND $${paramCount + 1}::timestamp`);
+                params.push(startOfDay, endOfDay);
+                paramCount += 2;
+            }
+        }
+
+        const whereClause = conditions.length > 0
+            ? `WHERE ${conditions.join(' AND ')}`
+            : '';
+
+        const query = ORDER_DETAILS_QUERY + `
+            ${whereClause}
+            ORDER BY t.delivery_time DESC;
+        `;
+
+        const { rows } = await pool.query(query, params);
+
+        res.json(rows);
+    } catch (err) {
+        console.error('Error fetching filtered orders:', err?.stack || err);
+        res.status(500).json({ error: 'Internal server error', detail: err.message });
+    }
+});
+
+/**
+ * GET /api/delivery/orders/latest
+ * Get the most recent (latest) order
+ */
+router.get('/last-order', async (req, res) => {
+    const partnerId = req.user.deliveryPartnerId;
+    try {
+        const query = ORDER_DETAILS_QUERY + `
+        WHERE t.delivery_partner_id = $1
+      ORDER BY t.delivery_time DESC
+      LIMIT 1;
+    `;
+
+        const { rows } = await pool.query(query, [partnerId]);
+
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'No orders found' });
+        }
+
+
+        res.json(rows[0]);
+    } catch (err) {
+        console.error('Error fetching latest order:', err?.stack || err);
         res.status(500).json({ error: 'Internal server error', detail: err.message });
     }
 });
@@ -167,45 +253,5 @@ router.get('/:orderId', async (req, res) => {
     }
 });
 
-/**
- * POST /api/delivery/orders/filter
- * Filter orders by partner ID and/or date with all delivery details
- */
-router.post('/filter', async (req, res) => {
-    const { partnerId, day } = req.body;
-
-    try {
-        let conditions = [];
-        const params = [];
-        let paramCount = 1;
-
-        if (partnerId) {
-            conditions.push(`t.delivery_partner_id = $${paramCount}`);
-            params.push(partnerId);
-            paramCount++;
-        }
-
-        if (day) {
-            conditions.push(`DATE(t.created_at) = $${paramCount}`);
-            params.push(day);
-            paramCount++;
-        }
-
-        const whereClause = conditions.length > 0
-            ? `WHERE ${conditions.join(' AND ')}`
-            : '';
-
-        const query = ORDER_DETAILS_QUERY + `
-            ${whereClause}
-            ORDER BY t.created_at DESC;
-        `;
-
-        const { rows } = await pool.query(query, params);
-        res.json(rows);
-    } catch (err) {
-        console.error('Error fetching filtered orders:', err && err.stack ? err.stack : err);
-        res.status(500).json({ error: 'Internal server error', detail: err.message });
-    }
-});
 
 module.exports = router;

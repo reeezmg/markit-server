@@ -389,8 +389,9 @@ model Trynbuy {
   bill            Bill?
   client          Client?      @relation(fields: [clientId], references: [id])
   clientId        String?      @map("client_id")
-  company         Company      @relation(fields: [companyId], references: [id])
-  companyId       String       @map("company_id")
+
+  companyLocations Address[]  @relation("try_n_buy_company_locations")
+  company        Company[]     @relation("try_n_buy_company")
   deliveryPartnerEarnings DeliveryPartnerEarnings?
 
   // 👇 Many Trynbuy → One DeliveryPartner
@@ -399,8 +400,7 @@ model Trynbuy {
 
   packingStatus   String?      @map("packing_status")
 
-  @@index([clientId])   
-  @@index([companyId])  
+  @@index([clientId])    
   @@allow("create, read, update, delete", true)
   @@map("trynbuys")
 }
