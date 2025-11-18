@@ -403,6 +403,57 @@ router.put('/update-bank', async (req, res) => {
 });
 
 
+/* ------------------------------------------------------------------
+   PUT /api/delivery-partner/update-profile
+   Update profile details (for now only email is editable)
+------------------------------------------------------------------- */
+router.put('/update-profile', async (req, res) => {
+    const partnerId = req.user?.deliveryPartnerId;
+
+    if (!partnerId) {
+        return res.status(401).json({ error: 'Unauthorized: partnerId missing' });
+    }
+
+    const { email } = req.body;
+
+    if (!email) {
+        return res.status(400).json({ error: 'Email is required' });
+    }
+
+    try {
+        const query = `
+            UPDATE delivery_partners
+            SET 
+                email = $1
+            WHERE id = $2
+              AND deleted IS NOT TRUE
+            RETURNING 
+                id,
+                email,
+                name,
+                phone,
+                profile_pic AS "profilePic",
+                status;
+        `;
+
+        const { rows } = await pool.query(query, [email, partnerId]);
+
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'Partner not found' });
+        }
+
+        res.json({
+            message: 'Profile updated successfully',
+            partner: rows[0]
+        });
+
+    } catch (err) {
+        console.error('Error updating profile:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+
 
 /* ------------------------------------------------------------------
    DELETE /api/delivery-partner/

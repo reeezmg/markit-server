@@ -54,6 +54,12 @@ const ORDER_DETAILS_QUERY = `
     WHERE tbc."B" = t.id
 ) as delivery_From,
 
+        (
+            SELECT json_agg(dpe2)
+            FROM delivery_partner_earnings dpe2
+            WHERE dpe2.trynbuy_id = t.id
+        ) AS earnings_details,
+         
         json_build_object(
             'name', dp.name,
             'phone', dp.phone,

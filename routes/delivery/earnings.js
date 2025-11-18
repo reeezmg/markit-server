@@ -11,16 +11,17 @@ router.use(authenticateToken);
 
 // Helper function to generate date filters
 const getDateFilter = (period) => {
-    const now = new Date();
     switch (period) {
-        case 'day':
-            return `DATE(t.created_at) = CURRENT_DATE`;
+        case 'today':
+            return `DATE(t.delivery_time) = CURRENT_DATE`;
         case 'week':
-            return `DATE_TRUNC('week', t.created_at) = DATE_TRUNC('week', CURRENT_DATE)`;
+            return `DATE_TRUNC('week', t.delivery_time) = DATE_TRUNC('week', CURRENT_DATE)`;
+        case 'lastWeek':
+            return `DATE_TRUNC('week', t.delivery_time) = DATE_TRUNC('week', CURRENT_DATE - INTERVAL '1 week')`;
         case 'month':
-            return `DATE_TRUNC('month', t.created_at) = DATE_TRUNC('month', CURRENT_DATE)`;
+            return `DATE_TRUNC('month', t.delivery_time) = DATE_TRUNC('month', CURRENT_DATE)`;
         case 'year':
-            return `DATE_TRUNC('year', t.created_at) = DATE_TRUNC('year', CURRENT_DATE)`;
+            return `DATE_TRUNC('year', t.delivery_time) = DATE_TRUNC('year', CURRENT_DATE)`;
         default:
             return null;
     }
@@ -28,7 +29,7 @@ const getDateFilter = (period) => {
 
 /**
  * GET /api/delivery/earnings/:period
- * Get earnings for specified period (day/week/month/year)
+ * Summary earnings for day/week/lastweek/month/year
  */
 router.get('/:period', async (req, res) => {
     const { period } = req.params;
@@ -36,25 +37,28 @@ router.get('/:period', async (req, res) => {
 
     const dateFilter = getDateFilter(period);
     if (!dateFilter) {
-        return res.status(400).json({ error: 'Invalid period. Use day, week, month, or year' });
+        return res.status(400).json({ error: 'Invalid period. Use day, week, lastWeek, month, or year' });
     }
 
     try {
         const query = `
             SELECT 
                 COUNT(t.id) as total_deliveries,
-                COALESCE(SUM(CAST(dpe."deliverFees" AS FLOAT)), 0) as total_delivery_fees,
-                COALESCE(SUM(CAST(dpe."waitingFees" AS FLOAT)), 0) as total_waiting_fees,
-                COALESCE(SUM(CAST(dpe.tips AS FLOAT)), 0) as total_tips,
-                COALESCE(SUM(CAST(dpe.surge AS FLOAT)), 0) as total_surge,
-                COALESCE(SUM(dpe.distance), 0) as total_distance,
-                COALESCE(SUM(dpe.waiting_time), 0) as total_waiting_time,
+                COALESCE(SUM(CAST(dpe."deliverFees" AS FLOAT)), 0) AS total_delivery_fees,
+                COALESCE(SUM(CAST(dpe."waitingFees" AS FLOAT)), 0) AS total_waiting_fees,
+                COALESCE(SUM(CAST(dpe.tips AS FLOAT)), 0) AS total_tips,
+                COALESCE(SUM(CAST(dpe.surge AS FLOAT)), 0) AS total_surge,
+                COALESCE(SUM(dpe.distance), 0) AS total_distance,
+                COALESCE(SUM(dpe.waiting_time), 0) AS total_waiting_time,
+
+                -- FIXED total earnings
                 COALESCE(SUM(
-                    CAST(dpe."deliverFees" AS FLOAT) + 
-                    CAST(dpe."waitingFees" AS FLOAT) + 
-                    CAST(dpe.tips AS FLOAT) + 
-                    CAST(dpe.surge AS FLOAT)
-                ), 0) as total_earnings
+                    COALESCE(CAST(dpe."deliverFees" AS FLOAT), 0) +
+                    COALESCE(CAST(dpe."waitingFees" AS FLOAT), 0) +
+                    COALESCE(CAST(dpe.tips AS FLOAT), 0) +
+                    COALESCE(CAST(dpe.surge AS FLOAT), 0)
+                ), 0) AS total_earnings
+
             FROM trynbuys t
             LEFT JOIN delivery_partner_earnings dpe ON t.id = dpe.trynbuy_id
             WHERE t.delivery_partner_id = $1
@@ -68,14 +72,14 @@ router.get('/:period', async (req, res) => {
 
         res.json(stats);
     } catch (err) {
-        console.error('Error fetching earnings:', err && err.stack ? err.stack : err);
+        console.error('Error fetching earnings:', err);
         res.status(500).json({ error: 'Internal server error', detail: err.message });
     }
 });
 
 /**
  * GET /api/delivery/earnings/:period/details
- * Get detailed earnings breakdown with individual orders
+ * Detailed list of all orders + summary totals
  */
 router.get('/:period/details', async (req, res) => {
     const { period } = req.params;
@@ -83,35 +87,71 @@ router.get('/:period/details', async (req, res) => {
 
     const dateFilter = getDateFilter(period);
     if (!dateFilter) {
-        return res.status(400).json({ error: 'Invalid period. Use day, week, month, or year' });
+        return res.status(400).json({ error: 'Invalid period. Use day, week, lastweek, month, or year' });
     }
 
     try {
-        const query = `
+        // ---------- SUMMARY QUERY ----------
+        const summaryQuery = `
             SELECT 
-                t.id,
-                t.created_at,
-                t.order_status,
-                CAST(dpe."deliverFees" AS FLOAT) as delivery_fees,
-                CAST(dpe."waitingFees" AS FLOAT) as waiting_fees,
-                CAST(dpe.tips AS FLOAT) as tips,
-                CAST(dpe.surge AS FLOAT) as surge,
-                dpe.distance,
-                dpe.waiting_time
+                COUNT(t.id) AS total_deliveries,
+                COALESCE(SUM(CAST(dpe."deliverFees" AS FLOAT)), 0) AS total_delivery_fees,
+                COALESCE(SUM(CAST(dpe."waitingFees" AS FLOAT)), 0) AS total_waiting_fees,
+                COALESCE(SUM(CAST(dpe.tips AS FLOAT)), 0) AS total_tips,
+                COALESCE(SUM(CAST(dpe.surge AS FLOAT)), 0) AS total_surge,
+                COALESCE(SUM(dpe.distance), 0) AS total_distance,
+                COALESCE(SUM(dpe.waiting_time), 0) AS total_waiting_time,
+                COALESCE(SUM(
+                    COALESCE(CAST(dpe."deliverFees" AS FLOAT), 0) +
+                    COALESCE(CAST(dpe."waitingFees" AS FLOAT), 0) +
+                    COALESCE(CAST(dpe.tips AS FLOAT), 0) +
+                    COALESCE(CAST(dpe.surge AS FLOAT), 0)
+                ), 0) AS total_earnings
             FROM trynbuys t
             LEFT JOIN delivery_partner_earnings dpe ON t.id = dpe.trynbuy_id
             WHERE t.delivery_partner_id = $1
             AND ${dateFilter}
-            ORDER BY t.created_at DESC
         `;
 
-        const { rows } = await pool.query(query, [partnerId]);
+        const summaryResult = await pool.query(summaryQuery, [partnerId]);
+        const summary = summaryResult.rows[0];
+
+        // ---------- DETAILS QUERY ----------
+        const detailsQuery = `
+            SELECT 
+                t.id,
+                t.delivery_time,
+                t.order_status,
+                t.order_number,
+                COALESCE(CAST(dpe."deliverFees" AS FLOAT), 0) AS delivery_fees,
+                COALESCE(CAST(dpe."waitingFees" AS FLOAT), 0) AS waiting_fees,
+                COALESCE(CAST(dpe.tips AS FLOAT), 0) AS tips,
+                COALESCE(CAST(dpe.surge AS FLOAT), 0) AS surge,
+                dpe.distance,
+                dpe.waiting_time,
+                (
+                    COALESCE(CAST(dpe."deliverFees" AS FLOAT), 0) +
+                    COALESCE(CAST(dpe."waitingFees" AS FLOAT), 0) +
+                    COALESCE(CAST(dpe.tips AS FLOAT), 0) +
+                    COALESCE(CAST(dpe.surge AS FLOAT), 0)
+                ) AS total_earnings
+            FROM trynbuys t
+            LEFT JOIN delivery_partner_earnings dpe ON t.id = dpe.trynbuy_id
+            WHERE t.delivery_partner_id = $1
+            AND ${dateFilter}
+            ORDER BY t.delivery_time DESC
+        `;
+
+        const detailsResult = await pool.query(detailsQuery, [partnerId]);
+
         res.json({
             period,
-            orders: rows
+            ...summary,   // spread summary totals here
+            orders: detailsResult.rows
         });
+
     } catch (err) {
-        console.error('Error fetching earnings details:', err && err.stack ? err.stack : err);
+        console.error('Error fetching earnings details:', err);
         res.status(500).json({ error: 'Internal server error', detail: err.message });
     }
 });
