@@ -13,7 +13,7 @@ router.use(authenticateToken);
 const getDateFilter = (period) => {
     switch (period) {
         case 'today':
-            return `DATE(t.delivery_time) = CURRENT_DATE`;
+            return `DATE(COALESCE(t.delivery_time, t.created_at)) = CURRENT_DATE`;
         case 'week':
             return `DATE_TRUNC('week', t.delivery_time) = DATE_TRUNC('week', CURRENT_DATE)`;
         case 'lastWeek':
@@ -87,7 +87,7 @@ router.get('/:period/details', async (req, res) => {
 
     const dateFilter = getDateFilter(period);
     if (!dateFilter) {
-        return res.status(400).json({ error: 'Invalid period. Use day, week, lastweek, month, or year' });
+        return res.status(400).json({ error: 'Invalid period. Use today, week, lastweek, month, or year' });
     }
 
     try {
