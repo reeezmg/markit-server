@@ -361,7 +361,6 @@ model DeliveryPartner extends Base {
   otp           String?
   otpExpiry     DateTime? @map("otp_expiry")
   referral      String?
-  isVerified    Boolean   @default(false) @map("is_verified")
   deleted       Boolean   @default(false)
 
   // 👇 One-to-many relation
@@ -372,34 +371,107 @@ model DeliveryPartner extends Base {
   @@map("delivery_partners")
 }
 
+model Trynbuy {
+  id              String       @id @default(uuid())
+  orderNumber     Int          @default(autoincrement()) @map("order_number")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  checkoutMethod  String       @map("checkout_method")
+  subtotal        Float        @map("subtotal")
+  productDiscount Float        @map("product_discount")
+  totalDiscount   Float        @map("total_discount")
+  shipping        Float        @map("shipping")
+  deliveryType    String       @map("delivery_type")
+  deliveryTime    DateTime?    @map("delivery_time")
+  orderStatus     String?      @default("ORDER_RECEIVED") @map("order_status") 
+  location        Address?     @relation(fields: [locationId], references: [id])
+  locationId      String?      @map("location_id")
+  cartItems       TrynbuyCartItem[]
+  returnedItems   TrynbuyReturnedItem[]
+  bill            Bill?
+  client          Client?      @relation(fields: [clientId], references: [id])
+  clientId        String?      @map("client_id")
+
+  companyLocations Address[]  @relation("try_n_buy_company_locations")
+  company        Company[]     @relation("try_n_buy_company")
+  deliveryPartnerEarnings DeliveryPartnerEarnings?
+
+  // 👇 Many Trynbuy → One DeliveryPartner
+  deliveryPartner   DeliveryPartner? @relation(fields: [deliveryPartnerId], references: [id])
+  deliveryPartnerId String?          @map("delivery_partner_id")
+
+  packingStatus   String?      @map("packing_status")
+
+  @@index([clientId])    
+  @@allow("create, read, update, delete", true)
+  @@map("trynbuys")
+}
 
 
 model DeliveryPartnerEarnings extends Base {
-    deliveryFees String? @map('deliverFees')
-    waitingFees String? @map('waitingFees')
-    tips String? 
-    surge String?
-    distance Float?
-    waitingTime Float? @map('waiting_time')
-    trynbuy        Trynbuy  @relation(fields: [trynbuyId], references: [id])
-    trynbuyId      String   @unique @map("trynbuy_id")
+  deliveryFees String? @map("deliverFees")
+  waitingFees  String? @map("waitingFees")
+  tips         String?
+  surge        String?
+  distance     Float?
+  waitingTime  Float?  @map("waiting_time")
 
-    deliveryPartner   DeliveryPartner @relation(fields: [deliveryPartnerId], references: [id])
-    deliveryPartnerId String   @unique @map("delivery_partner_id")
+  // 👇 Each earning belongs to one Trynbuy
+  trynbuy      Trynbuy  @relation(fields: [trynbuyId], references: [id])
+  trynbuyId    String   @unique @map("trynbuy_id")
 
-    @@allow('read, create, update, delete', true)
-    @@map('delivery_partner_earnings')
+  // 👇 Each earning belongs to one DeliveryPartner
+  deliveryPartner   DeliveryPartner @relation(fields: [deliveryPartnerId], references: [id])
+  deliveryPartnerId String          @map("delivery_partner_id")
+
+  @@allow("read, create, update, delete", true)
+  @@map("delivery_partner_earnings")
 }
 
 
 
 model DeliveryNotification extends Base {
+      createdAt              DateTime            @default(now()) @map("created_at")
+    updatedAt              DateTime            @default(now()) @map("updated_at")
     text      String
     deliveryPartner     DeliveryPartner @relation(fields: [deliveryPartnerId], references: [id], onDelete: Cascade)
     deliveryPartnerId   String          @map('delivery_partner_id')
     @@allow('read, create, update, delete', true)
 
     @@map('delivery_notifications')
+}
+
+
+
+model TrynbuyCartItem {
+  id        String   @id() @default(uuid())
+  trynbuy   Trynbuy  @relation(fields: [trynbuyId], references: [id])
+  trynbuyId String   @map("trynbuy_id")
+  variant   Variant  @relation(fields: [variantId], references: [id])
+  variantId String   @map("variant_id")
+  item      Item  @relation(fields: [itemId], references: [id])
+  itemId    String   @map("item_id")
+  quantity  Int  
+        
+   @@index([trynbuyId])  
+  @@index([variantId])
+  @@allow("create, read, update, delete", true)
+  @@map("trynbuy_cart_items")
+}
+
+model TrynbuyReturnedItem {
+  id        String   @id() @default(uuid())
+  trynbuy   Trynbuy  @relation(fields: [trynbuyId], references: [id])
+  trynbuyId String   @map("trynbuy_id")
+  variant   Variant  @relation(fields: [variantId], references: [id])
+  variantId String   @map("variant_id")
+  item      Item  @relation(fields: [itemId], references: [id])
+  itemId    String   @map("item_id")
+  quantity  Int 
+
+  @@index([trynbuyId])  
+  @@index([variantId])  
+  @@allow("create, read, update, delete", true)
+  @@map("trynbuy_returned_items")
 }
 
 model Coupon {
@@ -678,6 +750,7 @@ model Bill extends Base {
     clientId        String?  @map("client_id") 
 
     handlingFee    Float? @map("handling_fee")
+    waitingFee    Float? @map("waiting_fee")
     deliveryFee   Float? @map("delivery_fee")
 
     userId          String? @map("user_id")
@@ -695,72 +768,6 @@ model Bill extends Base {
 
 }
 
-
-model Trynbuy {
-  id              String       @id @default(uuid())
-  orderNumber     Int          @default(autoincrement()) @map("order_number")
-  createdAt       DateTime     @default(now()) @map("created_at")
-  checkoutMethod  String       @map("checkout_method")
-  subtotal        Float        @map("subtotal")
-  productDiscount Float        @map("product_discount")
-  totalDiscount   Float        @map("total_discount")
-  shipping        Float        @map("shipping")
-  deliveryType    String       @map("delivery_type")
-  deliveryTime    DateTime?    @map("delivery_time")
-  orderStatus     String?      @default('ORDER_RECEIVED') @map("order_status") 
-  location        Address?     @relation(fields: [locationId], references: [id])
-  locationId      String?      @map("location_id")
-  cartItems       TrynbuyCartItem[]
-  returnedItems   TrynbuyReturnedItem[]
-  bill            Bill?
-  client          Client?      @relation(fields: [clientId], references: [id])
-  clientId        String?      @map("client_id")
-  company         Company      @relation(fields: [companyId], references: [id])
-  companyId       String       @map("company_id")
-  deliveryPartnerEarnings   DeliveryPartnerEarnings?
-  deliveryPartner   DeliveryPartner? @relation(fields: [deliveryPartnerId], references: [id])
-  deliveryPartnerId String?   @map("delivery_partner_id")
-  packingStatus   String?      @map("packing_status")
-
-  @@index([clientId])   
-  @@index([companyId])  
-  @@allow('create, read, update, delete', true)
-  @@map("trynbuys")
-
-}
-
-
-model TrynbuyCartItem {
-  id        String   @id() @default(uuid())
-  trynbuy   Trynbuy  @relation(fields: [trynbuyId], references: [id])
-  trynbuyId String   @map("trynbuy_id")
-  variant   Variant  @relation(fields: [variantId], references: [id])
-  variantId String   @map("variant_id")
-  item      Item  @relation(fields: [itemId], references: [id])
-  itemId    String   @map("item_id")
-  quantity  Int  
-        
-   @@index([trynbuyId])  
-  @@index([variantId])
-  @@allow("create, read, update, delete", true)
-  @@map("trynbuy_cart_items")
-}
-
-model TrynbuyReturnedItem {
-  id        String   @id() @default(uuid())
-  trynbuy   Trynbuy  @relation(fields: [trynbuyId], references: [id])
-  trynbuyId String   @map("trynbuy_id")
-  variant   Variant  @relation(fields: [variantId], references: [id])
-  variantId String   @map("variant_id")
-  item      Item  @relation(fields: [itemId], references: [id])
-  itemId    String   @map("item_id")
-  quantity  Int 
-
-  @@index([trynbuyId])  
-  @@index([variantId])  
-  @@allow("create, read, update, delete", true)
-  @@map("trynbuy_returned_items")
-}
 
 
 model Entry extends Base {
