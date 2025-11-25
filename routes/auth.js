@@ -14,10 +14,10 @@ const pool = new Pool({
 // 🔹 CLIENT OTP LOGIN FLOW
 // ------------------------
 router.post('/login', async (req, res) => {
-  const { phone, otp } = req.body;
+  const { phone } = req.body;
   console.log('Auth request received with phone:', phone);
 
-  if (!phone || !otp) {
+  if (!phone) {
     return res.status(400).json({ error: 'Phone number and OTP are required' });
   }
 
@@ -29,16 +29,17 @@ router.post('/login', async (req, res) => {
 
     if (!user) return res.status(404).json({ error: 'Client not found' });
 
-    // 🔹 Verify OTP
-    if (!user.otp || user.otp !== otp || !user.otp_expiry || new Date(user.otp_expiry) < new Date()) {
-      return res.status(400).json({ error: 'Invalid or expired OTP' });
-    }
+    // // 🔹 Verify OTP
+    // if (!user.otp || user.otp !== otp || !user.otp_expiry || new Date(user.otp_expiry) < new Date()) {
+    //   return res.status(400).json({ error: 'Invalid or expired OTP' });
+    // }
 
-    // 🔹 Clear OTP
-    await client.query('UPDATE clients SET otp = NULL, otp_expiry = NULL WHERE id = $1', [user.id]);
+    // // 🔹 Clear OTP
+    // await client.query('UPDATE clients SET otp = NULL, otp_expiry = NULL WHERE id = $1', [user.id]);
 
     // 🔹 Generate JWT
-    const token = jwt.sign({ clientId: user.id }, SECRET, { expiresIn: '7d' });
+   const token = jwt.sign({ clientId: user.id }, SECRET);
+
 
     return res.json({ token, client: user });
   } catch (err) {
@@ -110,13 +111,13 @@ router.post('/deliveryPartner/login', async (req, res) => {
 
     if (!partner) return res.status(404).json({ error: 'Delivery Partner not found' });
 
-    if (!partner.otp || partner.otp !== otp || !partner.otp_expiry || new Date(partner.otp_expiry) < new Date()) {
-      return res.status(400).json({ error: 'Invalid or expired OTP' });
-    }
+    // if (!partner.otp || partner.otp !== otp || !partner.otp_expiry || new Date(partner.otp_expiry) < new Date()) {
+    //   return res.status(400).json({ error: 'Invalid or expired OTP' });
+    // }
 
-    await db.query('UPDATE delivery_partners SET otp = NULL, otp_expiry = NULL WHERE id = $1', [partner.id]);
+    // await db.query('UPDATE delivery_partners SET otp = NULL, otp_expiry = NULL WHERE id = $1', [partner.id]);
 
-    const token = jwt.sign({ deliveryPartnerId: partner.id }, SECRET, { expiresIn: '7d' });
+   const token = jwt.sign({ deliveryPartnerId: partner.id }, SECRET);
 
     return res.json({ token, partner });
   } catch (err) {

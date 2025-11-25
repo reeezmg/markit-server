@@ -10,7 +10,7 @@ const pool = new Pool({
 
 router.use(authenticateToken);
 
-router.get("/trynbuy", async (req, res) => {
+router.get('/trynbuy', async (req, res) => {
   const clientId = req.user.clientId;
 
   try {
@@ -28,53 +28,87 @@ router.get("/trynbuy", async (req, res) => {
         t.delivery_time,
         t.order_status,
         t.packing_status,
-        json_build_object(
-          'id', c.id,
-          'name', c.name,
-          'logo', c.logo
-        ) AS company,
+
+        -- ✅ All linked companies (many-to-many)
+        COALESCE(
+          (
+            SELECT json_agg(
+              json_build_object(
+                'id', c.id,
+                'name', c.name,
+                'logo', c.logo
+              )
+            )
+            FROM _try_n_buy_company tc
+            JOIN companies c ON c.id = tc."A"
+            WHERE tc."B" = t.id
+          ),
+          '[]'::json
+        ) AS companies,
+
+        -- ✅ Cart items with variant + product + company details
         COALESCE(
           (
             SELECT json_agg(
               json_build_object(
                 'id', v.id,
                 'name', v.name,
+                'product_name', p.name,
                 's_price', v.s_price,
                 'd_price', v.d_price,
                 'discount', v.discount,
                 'images', v.images,
                 'size', i.size,
-                'quantity', tci.quantity
+                'quantity', tci.quantity,
+                'company', json_build_object(
+                  'id', co.id,
+                  'name', co.name,
+                  'logo', co.logo
+                )
               )
             )
             FROM trynbuy_cart_items tci
             JOIN variants v ON tci.variant_id = v.id
             JOIN items i ON tci.item_id = i.id
+            JOIN products p ON v.product_id = p.id
+            JOIN companies co ON p.company_id = co.id
             WHERE tci.trynbuy_id = t.id
-          ), '[]'::json
+          ),
+          '[]'::json
         ) AS cartItems,
+
+        -- ✅ Returned items with variant + product + company details
         COALESCE(
           (
             SELECT json_agg(
               json_build_object(
                 'id', v.id,
                 'name', v.name,
+                'product_name', p.name,
                 's_price', v.s_price,
                 'd_price', v.d_price,
                 'discount', v.discount,
                 'images', v.images,
                 'size', i.size,
-                'quantity', tri.quantity
+                'quantity', tri.quantity,
+                'company', json_build_object(
+                  'id', co.id,
+                  'name', co.name,
+                  'logo', co.logo
+                )
               )
             )
             FROM trynbuy_returned_items tri
             JOIN variants v ON tri.variant_id = v.id
             JOIN items i ON tri.item_id = i.id
+            JOIN products p ON v.product_id = p.id
+            JOIN companies co ON p.company_id = co.id
             WHERE tri.trynbuy_id = t.id
-          ), '[]'::json
+          ),
+          '[]'::json
         ) AS returnedItems
+
       FROM trynbuys t
-      JOIN companies c ON t.company_id = c.id
       WHERE t.client_id = $1
       ORDER BY t.created_at DESC;
     `;
@@ -82,11 +116,9 @@ router.get("/trynbuy", async (req, res) => {
     const result = await pool.query(query, [clientId]);
     res.json(result.rows);
   } catch (err) {
-    console.error("Error fetching Trynbuy data:", err);
-    res.status(500).json({ error: "Internal Server Error" });
+    console.error('❌ Error fetching Trynbuy data:', err);
+    res.status(500).json({ error: 'Internal Server Error' });
   }
 });
-
-
 
 module.exports = router;

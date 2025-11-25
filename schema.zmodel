@@ -331,40 +331,45 @@ model Client extends Base {
     @@map('clients')
 }
 
+
 model DeliveryPartner extends Base {
-    partnerId Int?        @default(autoincrement()) @map("partner_id")
-    email     String?        @unique @email
-    name      String
-    password  String?
-    gender    String?
-    dob    String?
-    profilePic String? @map("profile_pic")
-    phone     String        @unique
-    status    Boolean       @default(true)
-    address   Address[]
-    bloodGroup String? @map("blood_group")
-    ifsc String?
-    accountNo String? @map("account_no")
-    bankName String? @map("bank_name")
-    upiId String?   @map("upi_id")
-    branch String? 
+  partnerId Int?        @default(autoincrement()) @map("partner_id")
+  email     String?     @unique @email
+  name      String
+  password  String?
+  gender    String?
+  dob       String?
+  profilePic String?    @map("profile_pic")
+  phone     String      @unique
+  status    Boolean     @default(true)
+  address   Address[]
+  bloodGroup String?    @map("blood_group")
+  ifsc       String?
+  accountNo  String?    @map("account_no")
+  bankName   String?    @map("bank_name")
+  upiId      String?    @map("upi_id")
+  branch     String?
 
-  //docs
-    Adharnumber String? @map("adharnumber")
-    PanNumber   String? @map("pan_number")
+  // Docs
+  Adharnumber      String? @map("adharnumber")
+  PanNumber        String? @map("pan_number")
+  DrivingLicenseDoc String? @map("driving_license_doc")
+  AadhaarCardDocs   String? @map("aadhaar_card_docs")
+  PanCardDoc        String? @map("pan_card_doc")
 
-    DrivingLicenseDoc String? @map("driving_license_doc")
-    AadhaarCardDocs String? @map("aadhaar_card_docs")
-    PanCardDoc String? @map("pan_card_doc")
+  deliveryNotification DeliveryNotification[]
+  otp           String?
+  otpExpiry     DateTime? @map("otp_expiry")
+  referral      String?
+  isVerified    Boolean   @default(false) @map("is_verified")
+  deleted       Boolean   @default(false)
 
-    deliveryNotification  DeliveryNotification[]
-    otp        String?
-    otpExpiry  DateTime? @map("otp_expiry")
-    referral    String?
-    deleted       Boolean   @default(false)
-    @@allow('read, create, update, delete', true)
+  // 👇 One-to-many relation
+  trynbuys      Trynbuy[]  // DeliveryPartner has many Trynbuys
+  deliveryPartnerEarnings DeliveryPartnerEarnings[] 
 
-    @@map('delivery_partners')
+  @@allow('read, create, update, delete', true)
+  @@map("delivery_partners")
 }
 
 
@@ -378,8 +383,10 @@ model DeliveryPartnerEarnings extends Base {
     waitingTime Float? @map('waiting_time')
     trynbuy        Trynbuy  @relation(fields: [trynbuyId], references: [id])
     trynbuyId      String   @unique @map("trynbuy_id")
-    
-    
+
+    deliveryPartner   DeliveryPartner @relation(fields: [deliveryPartnerId], references: [id])
+    deliveryPartnerId String   @unique @map("delivery_partner_id")
+
     @@allow('read, create, update, delete', true)
     @@map('delivery_partner_earnings')
 }
@@ -711,6 +718,8 @@ model Trynbuy {
   company         Company      @relation(fields: [companyId], references: [id])
   companyId       String       @map("company_id")
   deliveryPartnerEarnings   DeliveryPartnerEarnings?
+  deliveryPartner   DeliveryPartner? @relation(fields: [deliveryPartnerId], references: [id])
+  deliveryPartnerId String?   @map("delivery_partner_id")
   packingStatus   String?      @map("packing_status")
 
   @@index([clientId])   

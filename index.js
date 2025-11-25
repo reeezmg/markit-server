@@ -72,7 +72,7 @@ const mapRoutes = require('./routes/map');
 const devicesRoutes = require('./routes/devices');
 const clientRoutes = require('./routes/client');
 const razorpayRoutes = require('./routes/razorpay');
-const checkoutRoutes = require('./routes/checkout');
+const checkoutRoutes = require('./routes/checkout')(io);
 const packRoutes = require('./routes/pack')(io);
 
 app.use('/api/auth', authRoutes);

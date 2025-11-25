@@ -55,6 +55,7 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   const clientId = req.user.clientId;
   const {
+    id,
     name,
     formattedAddress,
     houseDetails,
@@ -70,13 +71,13 @@ router.post('/', async (req, res) => {
     const result = await client.query(
       `
       INSERT INTO addresses 
-        (client_id, name, formatted_address, house_details, landmark, type, lat, lng, active, created_at, updated_at)
+        (client_id, name, formatted_address, house_details, landmark, type, lat, lng, active, created_at, updated_at, id)
       VALUES 
-        ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+        ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW(),$10)
       RETURNING 
         id, name, formatted_address AS "formattedAddress", house_details AS "houseDetails", landmark, type, lat, lng, active, client_id AS "clientId"
       `,
-      [clientId, name, formattedAddress, houseDetails, landmark, type, lat, lng, active]
+      [clientId, name, formattedAddress, houseDetails, landmark, type, lat, lng, active,id]
     );
 
     res.status(201).json(result.rows[0]);

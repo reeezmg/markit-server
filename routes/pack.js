@@ -3,18 +3,17 @@ const { Pool } = require('pg');
 
 module.exports = (io) => {
   const router = express.Router();
-
-  const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-  });
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
   // ---------------- GET specific Try & Buy ----------------
-  router.get("/:id/:clientid", async (req, res) => {
+  router.get('/:id/:clientid', async (req, res) => {
     const clientId = req.params.clientid;
     const trynbuyId = req.params.id;
-    console.log(`Fetching Try & Buy ID: ${trynbuyId} for Client ID: ${clientId}`);
+    console.log(`📦 Fetching Try & Buy ID: ${trynbuyId} for Client ID: ${clientId}`);
+
     try {
-      const query = `
+      // 🔹 Fetch main Trynbuy info
+      const mainQuery = `
         SELECT
           t.id AS trynbuy_id,
           t.order_number,
@@ -28,87 +27,155 @@ module.exports = (io) => {
           t.delivery_time,
           t.order_status,
           t.packing_status,
-          COALESCE(dpe.waiting_fee, '0') AS waiting_fee,
-          COALESCE(dpe.waiting_time, 0) AS waiting_time,
-          json_build_object(
-            'id', c.id,
-            'name', c.name,
-            'logo', c.logo
-          ) AS company,
-          COALESCE(
-            (
-              SELECT json_agg(
-                json_build_object(
-                  'id', v.id,
-                  'name', v.name,
-                  's_price', v.s_price,
-                  'd_price', v.d_price,
-                  'discount', v.discount,
-                  'images', v.images,
-                  'size', i.size,
-                  'quantity', tci.quantity,
-                  'itemId', i.id,
-                  'barcode', i.barcode,
-                  'tax', v.tax,
-                  'categoryId', p.category_id
-                )
-              )
-              FROM trynbuy_cart_items tci
-              JOIN variants v ON tci.variant_id = v.id
-              JOIN items i ON tci.item_id = i.id
-              JOIN products p ON v.product_id = p.id
-              WHERE tci.trynbuy_id = t.id
-            ), '[]'::json
-          ) AS cartItems,
-          COALESCE(
-            (
-              SELECT json_agg(
-                json_build_object(
-                  'id', v.id,
-                  'name', v.name,
-                  's_price', v.s_price,
-                  'd_price', v.d_price,
-                  'discount', v.discount,
-                  'images', v.images,
-                  'size', i.size,
-                  'quantity', tri.quantity,
-                  'itemId', i.id,
-                  'barcode', i.barcode,
-                  'tax', v.tax,
-                  'categoryId', p.category_id
-                )
-              )
-              FROM trynbuy_returned_items tri
-              JOIN variants v ON tri.variant_id = v.id
-              JOIN items i ON tri.item_id = i.id
-              JOIN products p ON v.product_id = p.id
-              WHERE tri.trynbuy_id = t.id
-            ), '[]'::json
-          ) AS returnedItems
+          COALESCE(t.waiting_fee, 0) AS waiting_fee,
+          COALESCE(t.waiting_time, 0) AS waiting_time
         FROM trynbuys t
-        JOIN companies c ON t.company_id = c.id
-        LEFT JOIN delivery_partner_earnings dpe ON dpe.trynbuy_id = t.id
         WHERE t.client_id = $1 AND t.id = $2
         LIMIT 1;
       `;
 
-      const result = await pool.query(query, [clientId, trynbuyId]);
+      const trynbuyResult = await pool.query(mainQuery, [clientId, trynbuyId]);
+      if (trynbuyResult.rows.length === 0) {
+        return res.status(404).json({ error: 'Try & Buy not found' });
+      }
+      const trynbuy = trynbuyResult.rows[0];
 
-      if (result.rows.length === 0) {
-        return res.status(404).json({ error: "Try & Buy not found" });
+      // 🔹 Fetch companies and group their items
+      const companyQuery = `
+        SELECT
+          c.id AS company_id,
+          c.name AS company_name,
+          c.logo AS company_logo,
+          v.id AS variant_id,
+          v.name AS variant_name,
+          v.s_price,
+          v.d_price,
+          v.discount,
+          v.images,
+          p.name AS product_name,
+          i.size,
+          i.id AS item_id,
+          i.barcode,
+          tci.quantity,
+          COALESCE(tci.status, 'PENDING') AS status  -- ✅ status column in trynbuy_cart_items
+        FROM trynbuy_cart_items tci
+        JOIN variants v ON v.id = tci.variant_id
+        JOIN items i ON i.id = tci.item_id
+        JOIN products p ON p.id = v.product_id
+        JOIN companies c ON c.id = p.company_id
+        WHERE tci.trynbuy_id = $1
+        ORDER BY c.name;
+      `;
+      const companyResult = await pool.query(companyQuery, [trynbuyId]);
+
+      // 🔹 Group items by company
+      const companiesMap = {};
+      for (const row of companyResult.rows) {
+        if (!companiesMap[row.company_id]) {
+          companiesMap[row.company_id] = {
+            id: row.company_id,
+            name: row.company_name,
+            logo: row.company_logo,
+            cartitems: [],
+          };
+        }
+        companiesMap[row.company_id].cartitems.push({
+          id: row.variant_id,
+          name: row.variant_name,
+          product_name: row.product_name,
+          s_price: row.s_price,
+          d_price: row.d_price,
+          discount: row.discount,
+          images: row.images,
+          size: row.size,
+          quantity: row.quantity,
+          itemId: row.item_id,
+          barcode: row.barcode,
+          status: row.status,
+        });
       }
 
-      const trynbuyData = result.rows[0];
+      const companies = Object.values(companiesMap);
 
-      // ✅ Emit to client socket room
+      // 🔹 Fetch returned items
+      const returnedQuery = `
+        SELECT
+          v.id AS variant_id,
+          v.name AS variant_name,
+          p.name AS product_name,
+          v.s_price,
+          v.d_price,
+          v.discount,
+          v.images,
+          i.size,
+          i.barcode,
+          tri.quantity
+        FROM trynbuy_returned_items tri
+        JOIN variants v ON v.id = tri.variant_id
+        JOIN items i ON i.id = tri.item_id
+        JOIN products p ON p.id = v.product_id
+        WHERE tri.trynbuy_id = $1;
+      `;
+      const returnedResult = await pool.query(returnedQuery, [trynbuyId]);
+
+      // ✅ Build final response
+      const trynbuyData = {
+        ...trynbuy,
+        companies,
+        returneditems: returnedResult.rows,
+      };
+
+      // 🔔 Emit to socket
       io.to(`client:${clientId}`).emit('trynbuyUpdate', trynbuyData);
 
       res.json(trynbuyData);
     } catch (err) {
-      console.error("Error fetching Trynbuy data:", err);
-      res.status(500).json({ error: "Internal Server Error" });
+      console.error('❌ Error fetching Trynbuy data:', err);
+      res.status(500).json({ error: 'Internal Server Error' });
     }
   });
+
+  router.put('/trynbuy/:id/packing-status', async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+
+  // Validate request
+  if (!status) {
+    return res.status(400).json({ error: 'Status is required' });
+  }
+
+  try {
+    console.log(`🟢 Updating Trynbuy ${id} packing_status → ${status}`);
+
+    // ✅ Run update query
+  const query = `
+  UPDATE trynbuys
+  SET order_status = $1
+  WHERE id = $2
+  RETURNING id, order_status;
+`;
+
+
+    const result = await pool.query(query, [status, id]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Trynbuy not found' });
+    }
+
+    const updated = result.rows[0];
+
+    console.log(`✅ Trynbuy ${id} packing_status updated to ${updated.packing_status}`);
+
+    // ✅ Return response
+    res.json({
+      message: 'Packing status updated successfully',
+      data: updated,
+    });
+  } catch (err) {
+    console.error('❌ Error updating Trynbuy packing status:', err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
 
   return router;
 };
