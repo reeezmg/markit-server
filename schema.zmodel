@@ -334,13 +334,13 @@ model Client extends Base {
 model DeliveryPartner extends Base {
   partnerId Int?        @default(autoincrement()) @map("partner_id")
   email     String?     @unique @email
-  name      String
+  name      String?
   password  String?
   gender    String?
   dob       String?
   profilePic String?    @map("profile_pic")
   phone     String      @unique
-  status    Boolean     @default(true)
+  status    Boolean?     @default(true)
   address   Address[]
   bloodGroup String?    @map("blood_group")
   ifsc       String?
@@ -360,9 +360,10 @@ model DeliveryPartner extends Base {
   otp           String?
   otpExpiry     DateTime? @map("otp_expiry")
   referral      String?
-  deleted       Boolean   @default(false)
+  // isVerified    Boolean?   @default(false) @map("is_verified")
+  deleted       Boolean?   @default(false)
 
-  // 👇 One-to-many relation
+  // 👇 One-to-many relation 
   trynbuys      Trynbuy[]  // DeliveryPartner has many Trynbuys
   deliveryPartnerEarnings DeliveryPartnerEarnings[] 
 
