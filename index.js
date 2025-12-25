@@ -13,6 +13,7 @@ app.use(cors({
     'http://localhost:8101', // Ionic mobile app (dev)
     'http://localhost:3000', // React/Next dashboard
     'https://markit.co.in',
+    'http://localhost:5173', // Ionic mobile app (vite server)
     'http://192.168.8.252:8100'   // Production domain
   ],
   credentials: true,
