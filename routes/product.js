@@ -75,14 +75,21 @@ router.get('/company/:companyId', async (req, res) => {
     /* ------------------------------------ */
     /* SEARCH */
     /* ------------------------------------ */
-    if (search) {
-      filters.push(`
-        (
-          v.name ILIKE '%' || $${params.length + 1} || '%'
-          OR p.name ILIKE '%' || $${params.length + 1} || '%'
-        )
-      `);
-      params.push(search);
+    if (search?.trim()) {
+      const words = search.trim().split(/\s+/)
+
+      words.forEach(word => {
+        const idx = params.length + 1
+
+        filters.push(`
+      (
+        p.name ILIKE '%' || $${idx} || '%'
+        OR v.name ILIKE '%' || $${idx} || '%'
+      )
+    `)
+
+        params.push(word)
+      })
     }
 
     /* ------------------------------------ */

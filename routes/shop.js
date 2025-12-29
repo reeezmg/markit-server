@@ -252,4 +252,182 @@ const { rows } = await pool.query(sql, [JSON.stringify(reducedRoute), shopGeoms]
 });
 
 
+router.get('/by-category', async (req, res) => {
+  const { lat, lng, category } = req.query;
+
+  if (!lat || !lng || !category) {
+    return res.status(400).json({
+      error: 'lat, lng and category are required'
+    });
+  }
+
+  const latNum = parseFloat(lat);
+  const lngNum = parseFloat(lng);
+
+  if (Number.isNaN(latNum) || Number.isNaN(lngNum)) {
+    return res.status(400).json({ error: 'Invalid lat or lng' });
+  }
+
+  // 🔥 Extract parent category
+  // casual_shirt → shirt
+  // sports_shoes → shoes
+  const normalized = category
+    .toLowerCase()
+    .replace(/_/g, ' ')
+    .trim();
+
+  const parentCategory = normalized.split(' ').pop();
+
+  const params = [lngNum, latNum, parentCategory];
+
+  const sql = `
+    SELECT
+      c.id, c.name, c.logo, c.description,
+      a.id AS "addressId",
+      ST_X(a.coord::geometry) AS lng,
+      ST_Y(a.coord::geometry) AS lat,
+      ST_Distance(
+        a.coord,
+        ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography
+      ) AS air_distance
+    FROM companies c
+    JOIN addresses a ON a.company_id = c.id
+    WHERE c.status = true
+      AND a.coord IS NOT NULL
+      AND ST_DWithin(
+        a.coord,
+        ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
+        5000
+      )
+      AND EXISTS (
+        SELECT 1
+        FROM categories cat
+        WHERE cat.company_id = c.id
+          AND cat.name ILIKE '%' || $3 || '%'
+      )
+  `;
+
+  try {
+    const { rows } = await pool.query(sql, params);
+    if (!rows.length) return res.json([]);
+
+    // --- OSRM distance check ---
+    const roadChecked = await Promise.all(
+      rows.map(async shop => {
+        try {
+          const osrmRes = await fetch(
+            `${OSRM_URL}/route/v1/driving/${lngNum},${latNum};${shop.lng},${shop.lat}?overview=false`
+          );
+          const data = await osrmRes.json();
+
+          if (data.code !== 'Ok' || !data.routes?.length) return null;
+
+          const route = data.routes[0];
+          if (route.distance <= 5000) {
+            return {
+              ...shop,
+              road_distance: route.distance,
+              duration: route.duration
+            };
+          }
+          return null;
+        } catch {
+          return null;
+        }
+      })
+    );
+
+    res.json(
+      roadChecked
+        .filter(Boolean)
+        .sort((a, b) => a.road_distance - b.road_distance)
+    );
+  } catch (err) {
+    console.error('Error fetching shops by category:', err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+
+
+router.get('/search', async (req, res) => {
+  const { lat, lng, query } = req.query
+
+  if (!lat || !lng || !query) {
+    return res.status(400).json({ error: 'lat, lng and query are required' })
+  }
+
+  const latNum = parseFloat(lat)
+  const lngNum = parseFloat(lng)
+
+  if (Number.isNaN(latNum) || Number.isNaN(lngNum)) {
+    return res.status(400).json({ error: 'Invalid lat or lng' })
+  }
+
+  const tokens = query
+    .toLowerCase()
+    .replace(/_/g, ' ')
+    .trim()
+    .split(/\s+/)
+
+  const params = [lngNum, latNum]
+
+  const tokenConditions = tokens.map(token => {
+    const idx = params.length + 1
+    params.push(token)
+
+    return `
+      (
+        GREATEST(
+          similarity(c.name, $${idx}),
+          similarity(cat.name, $${idx})
+        ) > 0.2
+        OR c.name ILIKE '%' || $${idx} || '%'
+        OR cat.name ILIKE '%' || $${idx} || '%'
+      )
+    `
+  })
+
+  const sql = `
+    SELECT DISTINCT
+      c.id, c.name, c.logo, c.description,
+      a.id AS "addressId",
+      ST_X(a.coord::geometry) AS lng,
+      ST_Y(a.coord::geometry) AS lat,
+      ST_Distance(
+        a.coord,
+        ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography
+      ) AS air_distance,
+      MAX(
+        GREATEST(
+          similarity(c.name, ${tokens.map((_, i) => `$${i + 3}`).join(', ')}),
+          similarity(cat.name, ${tokens.map((_, i) => `$${i + 3}`).join(', ')} )
+        )
+      ) AS relevance
+    FROM companies c
+    JOIN addresses a ON a.company_id = c.id
+    LEFT JOIN categories cat ON cat.company_id = c.id
+    WHERE c.status = true
+      AND ST_DWithin(
+        a.coord,
+        ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
+        5000
+      )
+      AND (${tokenConditions.join(' AND ')})
+    GROUP BY c.id, a.id
+    ORDER BY relevance DESC, air_distance ASC
+    LIMIT 30
+  `
+
+  try {
+    const { rows } = await pool.query(sql, params)
+    res.json(rows)
+  } catch (err) {
+    console.error('Search failed:', err)
+    res.status(500).json({ error: 'Search failed' })
+  }
+})
+
+
+
 module.exports = router;
